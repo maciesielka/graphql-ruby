@@ -308,19 +308,56 @@ describe GraphQL::Query::Variables do
 
   if ActionPack::VERSION::MAJOR > 3
     describe "with a ActionController::Parameters" do
+      let(:schema) {
+        output_type = Class.new(GraphQL::Schema::Object) do
+          graphql_name "OneOfOutput"
+
+          field :string, GraphQL::Types::String
+          field :int, GraphQL::Types::Int
+        end
+
+        input_type = Class.new(GraphQL::Schema::InputObject) do
+          graphql_name "OneOfInputObject"
+          directive GraphQL::Schema::Directive::OneOf
+
+          argument :int, GraphQL::Types::Int, required: false
+          argument :string, GraphQL::Types::String, required: false
+        end
+
+        query_type = Class.new(Dummy::DairyAppQuery) do
+          field :one_of_field, output_type, null: false do
+            argument :one_of_arg, input_type
+          end
+
+          def one_of_field(one_of_arg:)
+            one_of_arg
+          end
+        end
+
+        Class.new(Dummy::Schema) do
+          query(query_type)
+        end
+      }
+
       let(:query_string) { <<-GRAPHQL
-        query getCheeses($source: DairyAnimal!, $fatContent: Float!){
+        query getCheeses($source: DairyAnimal!, $fatContent: Float!, $oneOfInput: OneOfInputObject!) {
           searchDairy(product: [{source: $source, fatContent: $fatContent}]) {
             ... on Cheese { flavor }
+          }
+          oneOfField(oneOfArg: $oneOfInput) {
+            string
+            int
           }
         }
       GRAPHQL
       }
+
       let(:params) do
         ActionController::Parameters.new(
           "variables" => {
             "source" => "COW",
             "fatContent" => 0.4,
+            "oneOfInput" => { "string" => "abc" }
           }
         )
       end
@@ -328,6 +365,7 @@ describe GraphQL::Query::Variables do
       it "works" do
         res = schema.execute(query_string, variables: params["variables"])
         assert_equal 1, res["data"]["searchDairy"].length
+        assert !!res["data"]["oneOfField"]
       end
     end
   end
